@@ -1,4 +1,4 @@
-export interface Driver {
+export interface Partner {
   partnerId: string;
   fullName: string;
   mobileNumber: string;
@@ -50,8 +50,8 @@ export interface Driver {
   updatedAt: Date;
 }
 
-// Factory function to create a new Driver
-export const createDriver = (data: {
+// Factory function to create a new Partner
+export const createPartner = (data: {
   partnerId: string;
   fullName: string;
   mobileNumber: string;
@@ -79,7 +79,7 @@ export const createDriver = (data: {
     registration?: { frontUrl?: string; backUrl?: string };
     permit?: { frontUrl?: string; backUrl?: string };
   };
-}): Driver => {
+}): Partner => {
   return {
     status: true,
     ...data,

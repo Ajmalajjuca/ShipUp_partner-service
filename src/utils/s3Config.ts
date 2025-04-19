@@ -1,90 +1,106 @@
 import { S3Client } from '@aws-sdk/client-s3';
-import multerS3 from 'multer-s3';
 import multer from 'multer';
-import dotenv from 'dotenv';
+import multerS3 from 'multer-s3';
+import path from 'path';
+import { config } from '../infrastructure/config';
+import fs from 'fs';
 
-dotenv.config();
-
-// Validate required environment variables
-const requiredEnvVars = ['AWS_REGION', 'AWS_ACCESS_KEY_ID', 'AWS_SECRET_ACCESS_KEY', 'AWS_PARTNER_BUCKET_NAME'];
-const missingEnvVars = requiredEnvVars.filter(envVar => !process.env[envVar]);
-
-if (missingEnvVars.length > 0) {
-  throw new Error(`Missing required environment variables: ${missingEnvVars.join(', ')}`);
-}
-
-// After validation, we can safely assert that these environment variables exist
-const AWS_REGION = process.env.AWS_REGION as string;
-const AWS_ACCESS_KEY_ID = process.env.AWS_ACCESS_KEY_ID as string;
-const AWS_SECRET_ACCESS_KEY = process.env.AWS_SECRET_ACCESS_KEY as string;
-const AWS_PARTNER_BUCKET_NAME = process.env.AWS_PARTNER_BUCKET_NAME as string;
-
+// Initialize S3 client (AWS SDK v3)
 const s3Client = new S3Client({
-  region: AWS_REGION,
+  region: config.aws.region,
   credentials: {
-    accessKeyId: AWS_ACCESS_KEY_ID,
-    secretAccessKey: AWS_SECRET_ACCESS_KEY
+    accessKeyId: config.aws.accessKeyId || '',
+    secretAccessKey: config.aws.secretAccessKey || ''
   }
 });
 
-// Helper function to generate key based on document type
-function generateS3Key(req: any, file: Express.Multer.File) {
-  const { folder = 'misc', subFolder, driverId } = req.body;
-  const timestamp = Date.now();
-  const originalName = file.originalname.replace(/\s+/g, '_');
+// Determine storage method based on configuration
+const getStorage = () => {
+  // Check if S3 credentials are configured
+  if (config.aws.accessKeyId && config.aws.secretAccessKey) {
+    console.log('Using S3 storage for file uploads');
+    return multerS3({
+      s3: s3Client,
+      bucket: config.aws.s3.bucket,
+      metadata: (req, file, cb) => {
+        cb(null, { fieldName: file.fieldname });
+      },
+      key: (req, file, cb) => {
+        const folderPath = getFolderPath(file.fieldname);
+        const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+        const ext = path.extname(file.originalname);
+        const filename = file.fieldname + '-' + uniqueSuffix + ext;
+        cb(null, `${folderPath}/${filename}`);
+      }
+    });
+  } else {
+    console.log('S3 credentials not found, using local disk storage');
+    return getDiskStorage();
+  }
+};
 
-  // Start with base
-  let key = '';
-
-  if (folder === 'profile-images') {
-    key = `profile-images/${driverId || 'unknown'}-${timestamp}-${originalName}`;
-  } else if (folder === 'documents') {
-    if (['insuranceDoc', 'pollutionDoc'].includes(subFolder)) {
-      key = `documents/${subFolder}/${driverId || 'unknown'}-${timestamp}.pdf`;
-    } else if (['license', 'aadhar', 'pan'].includes(subFolder)) {
-      const side = req.body.side || 'front';
-      key = `documents/${subFolder}/${side}/${driverId || 'unknown'}-${timestamp}-${originalName}`;
-    }
+// Set up disk storage as fallback
+const getDiskStorage = () => {
+  const uploadDir = path.join(process.cwd(), 'uploads');
+  if (!fs.existsSync(uploadDir)) {
+    fs.mkdirSync(uploadDir, { recursive: true });
   }
 
-  return key || `${folder}/${timestamp}-${originalName}`;
-}
-
-// Configure multer-s3
-const upload = multer({
-  storage: multerS3({
-    s3: s3Client,
-    bucket: AWS_PARTNER_BUCKET_NAME,
-    contentType: multerS3.AUTO_CONTENT_TYPE,
-    metadata: function (req, file, cb) {
-      cb(null, { fieldName: file.fieldname });
-    },
-    key: function (req, file, cb) {
-      try {
-        const s3Key = generateS3Key(req, file);
-        cb(null, s3Key);
-      } catch (err) {
-        cb(new Error('Failed to generate S3 key'));
+  return multer.diskStorage({
+    destination: (req, file, cb) => {
+      const folderPath = path.join(uploadDir, getFolderPath(file.fieldname));
+      if (!fs.existsSync(folderPath)) {
+        fs.mkdirSync(folderPath, { recursive: true });
       }
+      cb(null, folderPath);
+    },
+    filename: (req, file, cb) => {
+      const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+      const ext = path.extname(file.originalname);
+      cb(null, file.fieldname + '-' + uniqueSuffix + ext);
     }
-  }),
+  });
+};
+
+// Configure multer
+export const upload = multer({
+  storage: getStorage(),
   limits: {
-    fileSize: 5 * 1024 * 1024 // 5MB
+    fileSize: 5 * 1024 * 1024 // 5MB limit
   },
   fileFilter: (req, file, cb) => {
-    const allowedMimeTypes = [
-      'image/jpeg',
-      'image/png',
-      'image/jpg',
-      'application/pdf'
-    ];
-
-    if (allowedMimeTypes.includes(file.mimetype)) {
+    // Allow only images and PDFs
+    const allowedTypes = /jpeg|jpg|png|pdf/;
+    const ext = path.extname(file.originalname).toLowerCase();
+    const mimetype = file.mimetype;
+    
+    if (allowedTypes.test(ext) && allowedTypes.test(mimetype)) {
       cb(null, true);
     } else {
-      cb(new Error('Only JPEG, PNG, and PDF files are allowed.'));
+      cb(new Error('Only JPEG, JPG, PNG, and PDF files are allowed'));
     }
   }
 });
 
-export { s3Client, upload };
+/**
+ * Determine folder path based on document type
+ */
+function getFolderPath(fieldname: string): string {
+  switch (fieldname) {
+    case 'aadhar':
+      return 'documents/aadhar';
+    case 'pan':
+      return 'documents/pan';
+    case 'license':
+      return 'documents/license';
+    case 'insuranceDoc':
+      return 'documents/insurance';
+    case 'pollutionDoc':
+      return 'documents/pollution';
+    case 'profilePicture':
+    case 'profileImage':
+      return 'profiles';
+    default:
+      return 'documents/other';
+  }
+}

@@ -1,6 +1,6 @@
-import { Driver } from '../../domain/entities/driver';
-import { PartnerRepository } from '../../domain/repositories/driverRepository';
-import { DriverModel,  } from '../models/driverModel';
+import { PartnerRepository } from '../../domain/repositories/partnerRepository';
+import { Partner } from '../../domain/entities/partner';
+import {DriverModel} from '../models/driverModel';
 
 // Define PartnerDocument interface
 interface PartnerDocument {
@@ -46,47 +46,51 @@ interface PartnerDocument {
 }
 
 export class PartnerRepositoryImpl implements PartnerRepository {
-  async create(driver: Driver): Promise<Driver> {
-    const newDriver = new DriverModel(driver);
-    const savedDriver = await newDriver.save();
-    return savedDriver.toObject();
+  async create(partner: Partner): Promise<Partner> {
+    const newPartner = new DriverModel(partner);
+    await newPartner.save();
+    return newPartner.toObject();
   }
 
-  async findById(partnerId: string): Promise<Driver | null> {
-    const driver = await DriverModel.findOne({ partnerId }).lean();
-    return driver;
+  async findAll(): Promise<Partner[]> {
+    const partners = await DriverModel.find().sort({ createdAt: -1 });
+    return partners.map(partner => partner.toObject());
   }
 
-  async findByEmail(email: string): Promise<Driver | null> {
-    const driver = await DriverModel.findOne({ email }).lean();
-    return driver;
+  async findById(id: string): Promise<Partner | null> {
+    const partner = await DriverModel.findOne({ partnerId: id });
+    return partner ? partner.toObject() : null;
   }
 
-  async update(partnerId: string, data: Partial<Driver>): Promise<Driver | null> {
-    const updatedDriver = await DriverModel.findOneAndUpdate(
-      { partnerId },
-      { ...data, updatedAt: new Date() },
-      { new: true, lean: true }
+  async findByEmail(email: string): Promise<Partner | null> {
+    const partner = await DriverModel.findOne({ email });
+    return partner ? partner.toObject() : null;
+  }
+
+  async findByIdAndUpdate(id: string, updateData: Partial<Partner>): Promise<Partner | null> {
+    const updatedPartner = await DriverModel.findOneAndUpdate(
+      { partnerId: id },
+      { ...updateData, updatedAt: new Date() },
+      { new: true }
     );
-    return updatedDriver;
+    return updatedPartner ? updatedPartner.toObject() : null;
   }
 
-  async delete(partnerId: string): Promise<boolean> {
-    const result = await DriverModel.deleteOne({ partnerId });
-    return result.deletedCount === 1;
+  async updateStatus(id: string, status: boolean): Promise<Partner | null> {
+    const updatedPartner = await DriverModel.findOneAndUpdate(
+      { partnerId: id },
+      { status, updatedAt: new Date() },
+      { new: true }
+    );
+    return updatedPartner ? updatedPartner.toObject() : null;
   }
 
-  async findAll(): Promise<Driver[]> {
-    try {
-      const drivers = await DriverModel.find().lean();
-      
-      return drivers;
-    } catch (error) {
-      throw new Error(`Failed to find drivers: ${error}`);
-    }
+  async delete(id: string): Promise<boolean> {
+    const result = await DriverModel.deleteOne({ partnerId: id });
+    return result.deletedCount > 0;
   }
 
-  async findByIdAndUpdate(partnerId: string, updateData: Partial<PartnerDocument>) {
+  async findByIdAndUpdatePartnerDocument(partnerId: string, updateData: Partial<PartnerDocument>) {
     try {
       
       const updatedPartner = await DriverModel.findOneAndUpdate(

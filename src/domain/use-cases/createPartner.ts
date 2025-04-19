@@ -1,8 +1,8 @@
-// domain/use-cases/createDriver.ts
-import { PartnerRepository } from '../repositories/driverRepository';
-import { Driver, createDriver } from '../entities/driver';
+// domain/use-cases/createPartner.ts
+import { PartnerRepository } from '../repositories/partnerRepository';
+import { Partner, createPartner } from '../entities/partner';
 
-export class CreateDriver {
+export class CreatePartner {
   constructor(private partnerRepo: PartnerRepository) {}
 
   async execute(data: {
@@ -33,20 +33,20 @@ export class CreateDriver {
       registration?: { frontUrl?: string; backUrl?: string };
       permit?: { frontUrl?: string; backUrl?: string };
     };
-  }): Promise<{ success: boolean; driver?: Driver; error?: string }> {
+  }): Promise<{ success: boolean; partner?: Partner; error?: string }> {
     try {
-      const existingDriver = await this.partnerRepo.findByEmail(data.email);
-      if (existingDriver) {
+      const existingPartner = await this.partnerRepo.findByEmail(data.email);
+      if (existingPartner) {
         return { success: false, error: 'Email already exists' };
       }
 
-      const driver = createDriver(data);
+      const partner = createPartner(data);
 
-      const createdDriver = await this.partnerRepo.create(driver);
-      return { success: true, driver: createdDriver };
+      const createdPartner = await this.partnerRepo.create(partner);
+      return { success: true, partner: createdPartner };
     } catch (error) {
-      console.error('Create driver error:', error);
-      return { success: false, error: 'Failed to create driver' };
+      console.error('Create partner error:', error);
+      return { success: false, error: 'Failed to create partner' };
     }
   }
 }

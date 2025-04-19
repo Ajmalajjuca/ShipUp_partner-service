@@ -1,189 +1,106 @@
 import { Request, Response, NextFunction } from 'express';
-import jwt from 'jsonwebtoken';
+import { AppError } from '../../infrastructure/middleware/errorHandler';
 import axios from 'axios';
+import { config } from '../../infrastructure/config';
 
-// Define TokenPayload interface
-interface TokenPayload {
-  userId?: string;
-  tempId?: string;
-  role: string;
-  purpose?: string;
-}
-
-// Extend Express Request type to include user
+/**
+ * Extend Express Request interface to include user information
+ */
 declare global {
   namespace Express {
-    // This needs to match all uses of req.user in the application
     interface Request {
-      user?: TokenPayload;
+      user?: {
+        userId: string;
+        role: string;
+      };
     }
   }
 }
 
-export const authMiddleware = async (req: Request, res: Response, next: NextFunction) => {
-    try {
-        const authHeader = req.headers.authorization;
-        
-        if (!authHeader) {
-          res.status(401).json({ 
-            success: false, 
-            message: 'No authorization token provided' 
-          });
-          return
-        }
-        
-        // Extract token
-        const token = authHeader.split(' ')[1];
-        if (!token) {
-          res.status(401).json({ 
-            success: false, 
-            message: 'Invalid token format' 
-          });
-          return
-        }
-        
-        try {
-          // Verify token locally first
-          const decoded = jwt.verify(token, process.env.JWT_SECRET!) as TokenPayload;
-          
-          // Handle temporary tokens for document uploads
-          if (decoded.purpose === 'document-upload' && decoded.role === 'driver') {
-            // Allow temporary tokens for S3 uploads only
-            if (req.path.includes('/s3/upload')) {
-              req.user = decoded;
-              return next();
-            }
-          }
-          
-          // Check if user is a driver
-          if (decoded.role !== 'driver') {
-               res.status(403).json({
-                  success: false,
-                  message: 'Not authorized as driver'
-              });
-              return
-          }
-
-          // Set user info in request
-          req.user = decoded;
-          next();
-        } catch (error) {
-            console.error('Token verification error:');
-             res.status(401).json({ 
-                success: false, 
-                message: 'Invalid token' 
-            });
-            return
-        }
-    } catch (error) {
-        console.error('Auth middleware error:', error);
-         res.status(500).json({ 
-            success: false, 
-            message: 'Internal server error' 
-        });
-        return
-    }
-};
-
-export const authenticateToken = (req: Request, res: Response, next: NextFunction) => {
-    try {
-        const token = req.headers.authorization?.split(' ')[1];
-
-        if (!token) {
-             res.status(401).json({ 
-                success: false, 
-                error: 'Authentication token is required' 
-            });
-            return
-        }
-
-        const decoded = jwt.verify(token, process.env.JWT_SECRET!) as TokenPayload;
-        req.user = decoded;
-
-        // Check if user has admin role
-        if (decoded.role !== 'admin') {
-             res.status(403).json({ 
-                success: false, 
-                error: 'Access denied. Admin privileges required.' 
-            });
-            return
-        }
-
-        next();
-    } catch (error) {
-         res.status(401).json({ 
-            success: false, 
-            error: 'Invalid or expired token' 
-        });
-        return
-    }
-};
-
-// Optional: Add role-based middleware
-export const requireRole = (roles: string[]) => {
-    return (req: Request, res: Response, next: NextFunction) => {
-        if (!req.user) {
-             res.status(401).json({ 
-                success: false, 
-                error: 'Authentication required' 
-            });
-            return
-        }
-
-        if (!roles.includes(req.user.role)) {
-             res.status(403).json({ 
-                success: false, 
-                error: 'Access denied: Insufficient permissions' 
-            });
-            return
-        }
-
-        next();
-    };
-};
-
-// Optional: Add specific middleware for admin-only routes
-export const adminOnly = async (req: Request, res: Response, next: NextFunction) => {
+/**
+ * Middleware to verify JWT token with authentication service
+ */
+export const authMiddleware = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+) => {
+  try {
+    // Get token from Authorization header
     const authHeader = req.headers.authorization;
-    const token = authHeader?.split(' ')[1];
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return next(new AppError('No token provided', 401));
+    }
     
-    // try {
-        
-        if (!authHeader) {
-             res.status(401).json({ 
-                success: false, 
-                message: 'No authorization token provided' 
-            });
-            return
-        }
+    const token = authHeader.split(' ')[1];
+    console.log('Token:---->', token);
+    
+    
+    // Verify token with auth service
+    const response = await axios.post(`${config.services.auth}/auth/verify-token`,{}, { 
+      headers: { Authorization: `Bearer ${token}` }
+    }
+    );
+      
+     
+    
+    try {
+      
+      if (response.data.success) {
+        // Set user in request object
+        req.user = {
+          userId: response.data.user.id,
+          role: response.data.user.role
+        };
+        return next();
+      } else {
+        return next(new AppError('Invalid token', 401));
+      }
+    } catch (error) {
+      console.log('Error in authMiddleware:', error);
+      return next(new AppError('Token verification failed', 401));
+    }
+  } catch (error) {
+    return next(new AppError('Authentication failed', 401));
+  }
+};
 
-        const response = await axios.post('http://localhost:3001/auth/verify-token', {
-            token: token,
-            purpose: 'admin-access'
-        }, {
-            headers: {
-                Authorization: `Bearer ${token}`
-            }
-        });
-        console.log('Admin auth response:', response.data);
-        
+/**
+ * Middleware to ensure user has admin role
+ */
+export const adminOnly = (
+  req: Request,
+  res: Response,
+  next: NextFunction
+) => {
+  // First verify the token
+  authMiddleware(req, res, (err) => {
+    if (err) {
+      return next(err);
+    }
+    
+    // Check if user has admin role
+    if (!req.user || req.user.role !== 'admin') {
+      return next(new AppError('Admin access required', 403));
+    }
+    
+    return next();
+  });
+};
 
-        if (response.data.success && response.data.user.role === 'admin') {
-            req.user = response.data.user;
-            next();
-        } else {
-             res.status(403).json({ 
-                success: false, 
-                message: 'Admin access required' 
-            });
-            return
-        }
-    // } catch (error) {
-    //     console.error('Admin auth error:', error);
-    //      res.status(401).json({ 
-    //         success: false, 
-    //         message: 'Invalid admin token' 
-    //     });
-    //     return
-    // }
+/**
+ * Middleware to ensure user has specific role
+ */
+export const requireRole = (roles: string[]) => {
+  return (req: Request, res: Response, next: NextFunction) => {
+    if (!req.user) {
+      return next(new AppError('Authentication required', 401));
+    }
+
+    if (!roles.includes(req.user.role)) {
+      return next(new AppError('Access denied: Insufficient permissions', 403));
+    }
+
+    return next();
+  };
 }; 

@@ -1,8 +1,8 @@
 import mongoose, { Document, Schema } from 'mongoose';
-import { Driver } from '../../domain/entities/driver';
+import { Partner } from '../../domain/entities/partner';
 
 // Create an interface that extends both Driver and Document
-export interface IDriver extends Driver, Document {}
+export interface IDriver extends Partner, Document {}
 
 const driverSchema = new Schema({
   partnerId: { type: String, required: true, unique: true },

@@ -2,8 +2,17 @@ import express from 'express';
 import { partnerController } from '../controllers/driverController';
 import { authMiddleware, adminOnly } from '../middlewares/authMiddleware';
 import { upload } from '../../utils/s3Config';
+import path from 'path';
 
 const router = express.Router();
+
+// Add interface for S3 file type
+interface MulterS3File extends Express.Multer.File {
+  location?: string;
+}
+
+// Serve uploaded files statically
+router.use('/uploads', express.static(path.join(process.cwd(), 'uploads')));
 
 // Public routes
 router.post('/drivers', 
@@ -48,15 +57,16 @@ router.put('/drivers/:partnerId/documents',
   partnerController.updateDocumentUrls
 );
 
-// S3 upload route for driver documents
+// File upload route
 router.post('/s3/upload', authMiddleware, (req: express.Request, res: express.Response): void => {
   // Use dynamic field based on request
   const fieldName = req.query.type === 'profile' ? 'profileImage' : 'file';
+  console.log('Field name:', fieldName);
   
   upload.single(fieldName)(req, res, (err) => {
     try {
       if (err) {
-        console.error('Multer upload error:', err);
+        console.error('Upload error:', err);
         res.status(400).json({ 
           success: false, 
           error: 'Error uploading file: ' + err.message 
@@ -69,16 +79,32 @@ router.post('/s3/upload', authMiddleware, (req: express.Request, res: express.Re
         return;
       }
       
-      const s3File = req.file as Express.MulterS3.File;
+      const file = req.file as MulterS3File;
+      let fileUrl = '';
+      
+      // Check if using S3 or local disk storage
+      if (file.location) {
+        // S3 storage - use the location property directly
+        fileUrl = file.location;
+      } else if (file.destination) {
+        // Local disk storage - construct path based on destination and filename
+        fileUrl = `/api/uploads/${file.destination.split('uploads/')[1]}/${file.filename}`;
+      } else {
+        // Fallback
+        fileUrl = `/api/uploads/${file.filename}`;
+      }
       
       res.json({ 
         success: true, 
         message: 'File uploaded successfully',
-        fileUrl: s3File.location,
-        fileType: fieldName === 'profileImage' ? 'profile' : 'document'
+        fileUrl: fileUrl,
+        fileType: fieldName === 'profileImage' ? 'profile' : 'document',
+        originalname: file.originalname,
+        filename: file.filename,
+        path: file.path || file.location || ''
       });
     } catch (error) {
-      console.error('S3 upload error:', error);
+      console.error('Upload error:', error);
       res.status(500).json({ success: false, error: 'Failed to upload file' });
     }
   });
