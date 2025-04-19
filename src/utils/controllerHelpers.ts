@@ -1,5 +1,6 @@
 import { Request, Response } from 'express';
 import { ApiResponse, DocumentType, VerificationSection } from '../types/common';
+import { token } from 'morgan';
 
 /**
  * Process file uploads from multipart form data
@@ -94,7 +95,8 @@ export const sendSuccessResponse = <T>(
   res: Response,
   statusCode: number,
   partner: T,
-  message?: string
+  message?: string,
+  token?: string
 ): Response => {
   const response: ApiResponse<T> = {
     success: true,
@@ -103,6 +105,9 @@ export const sendSuccessResponse = <T>(
   
   if (message) {
     response.message = message;
+  }
+  if (token) {
+    response.token = token;
   }
   
   return res.status(statusCode).json(response);

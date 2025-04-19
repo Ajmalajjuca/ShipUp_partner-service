@@ -15,6 +15,7 @@ import {
   areAllDocumentsComplete
 } from '../../utils/controllerHelpers';
 import { PartnerUpdateFields, VerificationSection, VehicleDocuments } from '../../types/common';
+import { send } from 'process';
 
 // Use dependency injection for services
 const partnerRepository = new PartnerRepositoryImpl();
@@ -72,7 +73,7 @@ export const partnerController = {
       try {
         const authResponse = await axios.post(`${config.services.auth}/auth/register-driver`, {
           email,
-          role: 'driver',
+          role: 'partner',
           partnerId,
         });
         
@@ -119,13 +120,14 @@ export const partnerController = {
         
         const token = tokenResult.data.token;
         
-        res.status(201).json({
-          success: true,
-          status: 'success',
-          message: 'Partner registered successfully.',
-          driver: { email, partnerId },
-          token
-        });
+        // res.status(201).json({
+        //   success: true,
+        //   status: 'success',
+        //   message: 'Partner registered successfully.',
+        //   driver: { email, partnerId },
+        //   token
+        // });
+        sendSuccessResponse(res, 201, { email, partnerId }, 'Partner created successfully', token);
         return
       } catch (error) {
         console.error('Auth service error:', (error as any).response.data.error);
@@ -200,10 +202,8 @@ export const partnerController = {
         vehicleDocuments: partner.vehicleDocuments || null
       }));
 
-      res.status(200).json({
-        success: true,
-        partners: transformedPartners
-      });
+      
+      sendSuccessResponse(res, 200, transformedPartners);
       return
     } catch (error) {
       console.error('Get all partners error:', error);

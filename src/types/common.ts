@@ -32,6 +32,7 @@ export interface ApiResponse<T = any> {
   message?: string;
   error?: string;
   partner?: T;
+  token?: string;
 }
 
 export interface VehicleDocument {
