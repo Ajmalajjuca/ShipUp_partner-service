@@ -33,7 +33,6 @@ export const authMiddleware = async (
     }
     
     const token = authHeader.split(' ')[1];
-    console.log('Token:---->', token);
     
     
     // Verify token with auth service

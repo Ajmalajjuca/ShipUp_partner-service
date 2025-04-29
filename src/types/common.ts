@@ -64,8 +64,15 @@ export interface PartnerUpdateFields {
   upiId?: string;
   profilePicturePath?: string;
   status?: boolean;
+  isAvailable?: boolean;
+  lastOnline?: Date;
   bankDetailsCompleted?: boolean;
   personalDocumentsCompleted?: boolean;
   vehicleDetailsCompleted?: boolean;
   vehicleDocuments?: VehicleDocuments;
+  location?: {
+    type: string;
+    coordinates: [number, number];
+  };
+  lastLocationUpdate?: Date;
 } 

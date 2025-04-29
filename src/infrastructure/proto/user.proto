@@ -1,0 +1,124 @@
+syntax = "proto3";
+
+package user;
+
+service UserService {
+  // User Operations
+  rpc CreateUser(CreateUserRequest) returns (UserResponse);
+  rpc GetUser(GetUserRequest) returns (UserResponse);
+  rpc GetUserByEmail(GetUserByEmailRequest) returns (UserResponse);
+  rpc GetAllUsers(GetAllUsersRequest) returns (GetAllUsersResponse);
+  rpc UpdateUser(UpdateUserRequest) returns (UserResponse);
+  rpc UpdateUserStatus(UpdateUserStatusRequest) returns (UserResponse);
+  rpc DeleteUser(DeleteUserRequest) returns (UserResponse);
+  
+  // Profile Operations
+  rpc UpdateProfile(UpdateProfileRequest) returns (UserResponse);
+  rpc UpdateProfileImage(UpdateProfileImageRequest) returns (UserResponse);
+  
+  // S3 Upload
+  rpc S3Upload(S3UploadRequest) returns (S3UploadResponse);
+}
+
+// User Operation Requests
+message CreateUserRequest {
+  string fullName = 1;
+  string email = 2;
+  string phone = 3;
+  repeated string addresses = 4;
+  optional string profileImage = 5;
+}
+
+message GetUserRequest {
+  string userId = 1;
+}
+
+message GetUserByEmailRequest {
+  string email = 1;
+}
+
+message GetAllUsersRequest {
+  optional int32 page = 1;
+  optional int32 limit = 2;
+}
+
+message UpdateUserRequest {
+  string userId = 1;
+  optional string fullName = 2;
+  optional string phone = 3;
+  repeated string addresses = 4;
+  optional string profileImage = 5;
+}
+
+message UpdateUserStatusRequest {
+  string userId = 1;
+  bool status = 2;
+}
+
+message DeleteUserRequest {
+  string userId = 1;
+}
+
+// Profile Operation Requests
+message UpdateProfileRequest {
+  string userId = 1;
+  optional string fullName = 2;
+  optional string phone = 3;
+  repeated string addresses = 4;
+  optional string profileImage = 5;
+}
+
+message UpdateProfileImageRequest {
+  string userId = 1;
+  bytes image = 2;
+  string filename = 3;
+}
+
+// S3 Upload Requests and Responses
+message S3UploadRequest {
+  bytes file = 1;
+  string filename = 2;
+  string contentType = 3;
+}
+
+message S3UploadResponse {
+  bool success = 1;
+  string message = 2;
+  optional string fileUrl = 3;
+  optional string fileType = 4;
+  optional string originalname = 5;
+  optional string filename = 6;
+  optional string path = 7;
+}
+
+// User Responses
+message UserResponse {
+  bool success = 1;
+  string message = 2;
+  optional UserData userData = 3;
+}
+
+message GetAllUsersResponse {
+  bool success = 1;
+  string message = 2;
+  repeated UserData users = 3;
+  int32 totalCount = 4;
+  int32 page = 5;
+  int32 limit = 6;
+}
+
+// Common Data Types
+message UserData {
+  string userId = 1;
+  string fullName = 2;
+  string email = 3;
+  string phone = 4;
+  repeated string addresses = 5;
+  bool onlineStatus = 6;
+  bool isVerified = 7;
+  string referralId = 8;
+  bool status = 9;
+  optional string profileImage = 10;
+  optional string createdAt = 11;
+  optional string updatedAt = 12;
+} 

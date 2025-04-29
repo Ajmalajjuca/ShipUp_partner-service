@@ -1,517 +1,159 @@
-# Partner Service API Documentation
+# Partner Service
 
-This document provides comprehensive information about the Partner Service API endpoints, their request/response formats, and usage guidelines.
+This microservice manages delivery partners for the ShipUp logistics platform, including partner availability, real-time location tracking, and delivery matching.
 
-## Table of Contents
+## Features
 
-- [Overview](#overview)
-- [Base URL](#base-url)
-- [Authentication](#authentication)
-- [Error Handling](#error-handling)
-- [API Endpoints](#api-endpoints)
-  - [Driver Management](#driver-management)
-  - [Document Management](#document-management)
-  - [Vehicle Management](#vehicle-management)
-  - [Order Management](#order-management)
-  - [File Upload](#file-upload)
+- **Partner Management**: Create, update, and delete delivery partners
+- **Document Verification**: Handle partner document uploads and verification
+- **Real-time Availability**: Track partner online/offline status 
+- **Location Tracking**: Real-time partner location updates
+- **Matching Pool**: Redis-based pool for efficient delivery matching
+- **WebSocket Integration**: Real-time communication with partners
+- **Auto-Offlining**: Automatically set inactive partners offline
 
-## Overview
+## Prerequisites
 
-The Partner Service provides APIs for managing delivery partners (drivers), their documents, vehicles, and related operations.
+- Node.js (v16+)
+- MongoDB
+- Redis (for availability pool and geo-indexing)
 
-## Base URL
+## Installation
 
-```
-http://localhost:3003/api
-```
+1. Clone the repository
+2. Install dependencies:
 
-## Authentication
-
-Most endpoints require authentication via JWT tokens. Include the token in the Authorization header:
-
-```
-Authorization: Bearer <your_token>
+```bash
+cd service/partner-service
+npm install
 ```
 
-## Error Handling
+3. Create a `.env` file based on `.env.example`:
 
-All API responses follow a consistent format:
+```
+# Server Configuration
+PORT=3003
+NODE_ENV=development
 
-### Success Response
+# Database
+MONGODB_URI=mongodb://localhost:27017/partner_service_db
 
-```json
-{
-  "success": true,
-  "message": "Operation completed successfully",
-  // Additional data specific to the endpoint
-}
+# Redis
+REDIS_URL=redis://localhost:6379
+REDIS_PASSWORD=
+
+# Authentication Service
+AUTH_SERVICE_URL=http://localhost:3001
+
+# User Service
+USER_SERVICE_URL=http://localhost:3002
+
+# CORS
+CORS_ORIGINS=*
 ```
 
-### Error Response
+## Running the Service
 
-```json
-{
-  "success": false,
-  "error": "Error message"
-}
+### Development
+
+```bash
+npm run dev
+```
+
+### Production
+
+```bash
+npm run build
+npm start
 ```
 
 ## API Endpoints
 
-### Driver Management
+### Partner Management
 
-#### Create Driver
+- `POST /api/drivers` - Create a new partner
+- `GET /api/drivers` - Get all partners (admin only)
+- `GET /api/drivers/:partnerId` - Get partner by ID
+- `GET /api/drivers/by-email/:email` - Get partner by email
+- `PUT /api/drivers/:partnerId` - Update partner (admin only)
+- `DELETE /api/drivers/:partnerId` - Delete partner (admin only)
 
-Create a new delivery partner (driver) profile.
+### Partner Availability
 
-- **URL:** `/drivers`
-- **Method:** `POST`
-- **Auth Required:** No
-- **Request Body:**
-
-```json
-{
-  "partnerId": "DRV-abc123",
-  "email": "driver@example.com",
-  "fullName": "John Driver",
-  "phone": "+919876543210",
-  "address": "123 Driver St, City, Country"
-}
-```
-
-- **Success Response:**
-
-```json
-{
-  "success": true,
-  "partner": {
-    "partnerId": "DRV-abc123",
-    "email": "driver@example.com",
-    "fullName": "John Driver",
-    "phone": "+919876543210",
-    "address": "123 Driver St, City, Country",
-    "onlineStatus": false,
-    "isVerified": false,
-    "status": true,
-    "profileImage": null,
-    "bankDetails": null,
-    "vehicleDetails": null,
-    "drivingLicense": null,
-    "vehicleDocuments": null
-  }
-}
-```
-
-#### Get Driver
-
-Get driver profile by ID.
-
-- **URL:** `/drivers/:partnerId`
-- **Method:** `GET`
-- **Auth Required:** Yes
-- **Success Response:**
-
-```json
-{
-  "success": true,
-  "partner": {
-    "partnerId": "DRV-abc123",
-    "email": "driver@example.com",
-    "fullName": "John Driver",
-    "phone": "+919876543210",
-    "address": "123 Driver St, City, Country",
-    "onlineStatus": true,
-    "isVerified": true,
-    "status": true,
-    "profileImage": "https://example.com/profile.jpg",
-    "bankDetails": {
-      "accountNumber": "XXXX1234",
-      "bankName": "Example Bank",
-      "branchCode": "EXB001",
-      "accountHolderName": "John Driver"
-    },
-    "vehicleDetails": {
-      "vehicleType": "Bike",
-      "vehicleNumber": "XY12A3456",
-      "model": "Honda Activa",
-      "year": "2020"
-    },
-    "drivingLicense": {
-      "front": "https://example.com/license-front.jpg",
-      "back": "https://example.com/license-back.jpg"
-    },
-    "vehicleDocuments": {
-      "registration": {
-        "front": "https://example.com/registration-front.jpg",
-        "back": "https://example.com/registration-back.jpg"
-      },
-      "insurance": {
-        "front": "https://example.com/insurance-front.jpg",
-        "back": "https://example.com/insurance-back.jpg"
-      }
-    }
-  }
-}
-```
-
-#### Get Driver By Email
-
-Get driver profile by email.
-
-- **URL:** `/drivers/by-email/:email`
-- **Method:** `GET`
-- **Auth Required:** Yes
-- **Success Response:**
-
-Same as Get Driver endpoint.
-
-#### Update Driver
-
-Update driver profile details.
-
-- **URL:** `/drivers/:partnerId`
-- **Method:** `PUT`
-- **Auth Required:** Yes
-- **Request Body:**
-
-```json
-{
-  "fullName": "John Smith Driver",
-  "phone": "+919876543211",
-  "address": "456 Driver Ave, City, Country"
-}
-```
-
-- **Success Response:**
-
-```json
-{
-  "success": true,
-  "partner": {
-    "partnerId": "DRV-abc123",
-    "fullName": "John Smith Driver",
-    "phone": "+919876543211",
-    "address": "456 Driver Ave, City, Country",
-    // ... other driver properties
-  }
-}
-```
-
-#### Delete Driver
-
-Delete a driver.
-
-- **URL:** `/drivers/:partnerId`
-- **Method:** `DELETE`
-- **Auth Required:** Yes
-- **Success Response:**
-
-```json
-{
-  "success": true,
-  "message": "Driver deleted successfully"
-}
-```
-
-#### Get All Drivers
-
-Get all drivers in the system.
-
-- **URL:** `/drivers`
-- **Method:** `GET`
-- **Auth Required:** Yes
-- **Success Response:**
-
-```json
-{
-  "success": true,
-  "partners": [
-    {
-      "partnerId": "DRV-abc123",
-      "email": "driver@example.com",
-      "fullName": "John Driver",
-      // ... other driver properties
-    },
-    // ... more drivers
-  ]
-}
-```
-
-#### Update Driver Status
-
-Update driver status (active/inactive).
-
-- **URL:** `/drivers/:partnerId/status`
-- **Method:** `PUT`
-- **Auth Required:** Yes
-- **Request Body:**
-
-```json
-{
-  "status": false
-}
-```
-
-- **Success Response:**
-
-```json
-{
-  "success": true,
-  "message": "Driver status updated successfully",
-  "partner": {
-    "partnerId": "DRV-abc123",
-    "status": false,
-    // ... other driver properties
-  }
-}
-```
-
-#### Update Online Status
-
-Update driver's online/offline status.
-
-- **URL:** `/drivers/:partnerId/online-status`
-- **Method:** `PUT`
-- **Auth Required:** Yes
-- **Request Body:**
-
-```json
-{
-  "onlineStatus": true
-}
-```
-
-- **Success Response:**
-
-```json
-{
-  "success": true,
-  "message": "Online status updated successfully",
-  "partner": {
-    "partnerId": "DRV-abc123",
-    "onlineStatus": true,
-    // ... other driver properties
-  }
-}
-```
+- `PUT /api/drivers/update-availability/:partnerId` - Update partner availability status
+- `POST /api/drivers/:partnerId/location` - Update partner location
 
 ### Document Management
 
-#### Update Documents
+- `PUT /api/drivers/:partnerId/documents` - Update document URLs
+- `PUT /api/drivers/:partnerId/profile-image` - Update profile image
 
-Update driver's documents.
+## WebSocket Events
 
-- **URL:** `/drivers/:partnerId/documents`
-- **Method:** `PUT`
-- **Auth Required:** Yes
-- **Request Body:**
+### Authentication
 
-```json
-{
-  "drivingLicense": {
-    "front": "https://example.com/license-front.jpg",
-    "back": "https://example.com/license-back.jpg"
-  },
-  "vehicleDocuments": {
-    "registration": {
-      "front": "https://example.com/registration-front.jpg",
-      "back": "https://example.com/registration-back.jpg"
-    },
-    "insurance": {
-      "front": "https://example.com/insurance-front.jpg",
-      "back": "https://example.com/insurance-back.jpg"
-    }
-  }
-}
-```
+- `authenticate` (client → server): Authenticate with partnerId and token
+- `authenticated` (server → client): Authentication successful
+- `authentication_error` (server → client): Authentication failed
 
-- **Success Response:**
+### Location Updates
 
-```json
-{
-  "success": true,
-  "message": "Documents updated successfully",
-  "partner": {
-    "partnerId": "DRV-abc123",
-    "drivingLicense": {
-      "front": "https://example.com/license-front.jpg",
-      "back": "https://example.com/license-back.jpg"
-    },
-    "vehicleDocuments": {
-      "registration": {
-        "front": "https://example.com/registration-front.jpg",
-        "back": "https://example.com/registration-back.jpg"
-      },
-      "insurance": {
-        "front": "https://example.com/insurance-front.jpg",
-        "back": "https://example.com/insurance-back.jpg"
-      }
-    },
-    // ... other driver properties
-  }
-}
-```
+- `update_location` (client → server): Update partner location
+- `location_updated` (server → client): Location update confirmation
+- `location_error` (server → client): Location update failed
 
-### Vehicle Management
+### Availability
 
-#### Update Vehicle Details
-
-Update driver's vehicle details.
-
-- **URL:** `/drivers/:partnerId/vehicle`
-- **Method:** `PUT`
-- **Auth Required:** Yes
-- **Request Body:**
-
-```json
-{
-  "vehicleType": "Car",
-  "vehicleNumber": "XY12A3457",
-  "model": "Maruti Swift",
-  "year": "2021"
-}
-```
-
-- **Success Response:**
-
-```json
-{
-  "success": true,
-  "message": "Vehicle details updated successfully",
-  "partner": {
-    "partnerId": "DRV-abc123",
-    "vehicleDetails": {
-      "vehicleType": "Car",
-      "vehicleNumber": "XY12A3457",
-      "model": "Maruti Swift",
-      "year": "2021"
-    },
-    // ... other driver properties
-  }
-}
-```
-
-### Bank Details
-
-#### Update Bank Details
-
-Update driver's bank details.
-
-- **URL:** `/drivers/:partnerId/bank`
-- **Method:** `PUT`
-- **Auth Required:** Yes
-- **Request Body:**
-
-```json
-{
-  "accountNumber": "XXXX5678",
-  "bankName": "New Bank",
-  "branchCode": "NB001",
-  "accountHolderName": "John Smith Driver"
-}
-```
-
-- **Success Response:**
-
-```json
-{
-  "success": true,
-  "message": "Bank details updated successfully",
-  "partner": {
-    "partnerId": "DRV-abc123",
-    "bankDetails": {
-      "accountNumber": "XXXX5678",
-      "bankName": "New Bank",
-      "branchCode": "NB001",
-      "accountHolderName": "John Smith Driver"
-    },
-    // ... other driver properties
-  }
-}
-```
+- `set_availability` (client → server): Update availability status
+- `availability_updated` (server → client): Availability update confirmation
+- `availability_error` (server → client): Availability update failed
+- `auto_offline` (server → client): Partner automatically set offline
+- `forced_offline` (server → client): Partner forced offline by admin
 
 ### Order Management
 
-#### Get Driver Orders
+- `delivery_request` (server → client): New delivery request
+- `respond_to_order` (client → server): Accept/reject delivery
+- `order_response_received` (server → client): Order response confirmation
+- `order_response_error` (server → client): Order response failed
 
-Get orders assigned to a driver.
+## Redis Data Structure
 
-- **URL:** `/drivers/:partnerId/orders`
-- **Method:** `GET`
-- **Auth Required:** Yes
-- **Query Parameters:**
-  - `status`: Filter by order status (optional)
-  - `startDate`: Filter by start date (optional, format: YYYY-MM-DD)
-  - `endDate`: Filter by end date (optional, format: YYYY-MM-DD)
-- **Success Response:**
+### Driver Pool Storage
 
-```json
-{
-  "success": true,
-  "orders": [
-    {
-      "orderId": "ORD-123456",
-      "userId": "USR-abc123",
-      "partnerId": "DRV-abc123",
-      "status": "delivered",
-      "deliveryAddress": "123 Delivery St, City, Country",
-      "pickupAddress": "456 Pickup St, City, Country",
-      "amount": 250.00,
-      "paymentStatus": "paid",
-      "createdAt": "2023-05-01T10:30:00Z",
-      "deliveredAt": "2023-05-01T11:30:00Z"
-    },
-    // ... more orders
-  ]
-}
-```
+- `driver:{partnerId}` - Hash containing driver data
+- `available_drivers_geo` - Geo spatial index for location-based matching
+- `drivers:{vehicleType}` - Sorted set for filtering by vehicle type
 
-### File Upload
+## Auto-Offlining
 
-#### S3 Upload
+Partners are automatically set offline after 5 minutes of inactivity. This is handled by:
 
-Upload a file to S3.
+1. Redis key expiry for automatic cleanup
+2. A cron job that runs every minute to check for inactive partners
+3. WebSocket disconnection events
 
-- **URL:** `/s3/upload`
-- **Method:** `POST`
-- **Auth Required:** Yes (token or temporary token)
-- **Content-Type:** `multipart/form-data`
-- **Query Parameters:**
-  - `type`: Document type (e.g., `license`, `registration`, `insurance`, `profile`)
-  - `side`: Document side (`front` or `back`, for documents only)
-- **Request Body:**
+## Implementation Notes
 
-```
-file: (file)
-```
+### Redis Matching Pool
 
-- **Success Response:**
+When a partner goes online, they are added to the Redis matching pool:
+- Their data is stored in a Redis hash with a 5-minute TTL
+- Their location is indexed in a GeoSpatial index for efficient nearby queries
 
-```json
-{
-  "success": true,
-  "message": "File uploaded successfully",
-  "fileUrl": "https://example.com/uploaded-file.jpg",
-  "fileType": "license",
-  "side": "front"
-}
-```
+### Location Updates
 
-## Status Codes
+Partner locations can be updated through:
+- REST API endpoint (for HTTP requests)
+- WebSocket events (for real-time updates)
 
-- `200 OK`: The request was successful
-- `201 Created`: The resource was successfully created
-- `400 Bad Request`: The request was invalid
-- `401 Unauthorized`: Authentication failed
-- `403 Forbidden`: The user does not have permission
-- `404 Not Found`: The requested resource was not found
-- `500 Internal Server Error`: An error occurred on the server
+Each location update resets the Redis TTL to prevent automatic offlining.
 
-## Error Messages
+### WebSocket Integration
 
-- `Missing required fields`: One or more required fields are missing
-- `Invalid phone number format`: Phone number format is invalid
-- `Driver not found`: The requested driver does not exist
-- `Internal server error`: An unexpected error occurred on the server
-- `Invalid token`: The provided authentication token is invalid
-- `No file uploaded`: File upload was expected but no file was provided 
+The service uses Socket.io for real-time communication with partners.
+Partners must authenticate with their partner ID and token to establish a connection.
+
+## License
+
+ISC 

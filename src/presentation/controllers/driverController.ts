@@ -16,10 +16,13 @@ import {
 } from '../../utils/controllerHelpers';
 import { PartnerUpdateFields, VerificationSection, VehicleDocuments } from '../../types/common';
 import { send } from 'process';
+import { PartnerService } from '../../domain/use-cases/partnerService';
+import { LocationCoordinates } from '../../domain/entities/location';
 
 // Use dependency injection for services
 const partnerRepository = new PartnerRepositoryImpl();
 const createPartner = new CreatePartner(partnerRepository);
+const partnerService = new PartnerService(); // Assuming this is a function that returns the partner service instance
 // Uncomment this when all DI components are fixed
 // const partnerService = getPartnerService();
 
@@ -41,6 +44,8 @@ export const partnerController = {
         upiId,
         vehicleDocuments: vehicleDocumentsStr,
       } = req.body;
+      console.log('vehicleType:', vehicleType);
+      
 
       // Parse vehicleDocuments from form data
       const vehicleDocuments = parseJsonField<VehicleDocuments>(vehicleDocumentsStr);
@@ -668,6 +673,598 @@ export const partnerController = {
       console.error('Update document URLs error:', error);
       sendErrorResponse(res, 500, 'Internal server error');
       return
+    }
+  },
+
+  // Update driver availability status
+  async updateAvailability(req: Request, res: Response) {
+    try {
+      const { partnerId } = req.params;
+      const { isAvailable, location } = req.body;
+
+      // Validate input
+      if (isAvailable === undefined || typeof isAvailable !== 'boolean') {
+        sendErrorResponse(res, 400, 'isAvailable must be a boolean value');
+        return;
+      }
+
+      // Optional location validation if provided
+      if (location && (!location.latitude || !location.longitude)) {
+        sendErrorResponse(res, 400, 'If location is provided, it must include latitude and longitude');
+        return;
+      }
+
+      // Check if partner exists
+      const partner = await partnerRepository.findById(partnerId);
+      if (!partner) {
+        sendErrorResponse(res, 404, 'Partner not found');
+        return;
+      }
+
+      // Prepare update data
+      const updateData: PartnerUpdateFields = {
+        isAvailable: isAvailable,
+        lastOnline: new Date() // Always update lastOnline timestamp
+      };
+
+      // Add location to update data if provided
+      if (location) {
+        updateData.location = {
+          type: 'Point',
+          coordinates: [location.longitude, location.latitude]
+        };
+        updateData.lastLocationUpdate = new Date();
+      }
+
+      // Update the partner's availability status in MongoDB
+      const updatedPartner = await partnerRepository.findByIdAndUpdate(partnerId, updateData);
+
+      if (!updatedPartner) {
+        sendErrorResponse(res, 500, 'Failed to update availability status');
+        return;
+      }
+
+      // If partner is going online, add them to the Redis matching pool
+      if (isAvailable) {
+        try {
+          // Import Redis client
+          const { redisClient } = require('../../infrastructure/database/redis');
+          
+          // Create a driver entry for the matching pool
+          const driverPoolData = {
+            partnerId: updatedPartner.partnerId,
+            isAvailable: true,
+            lastOnline: new Date().toISOString(),
+            location: location || { latitude: 0, longitude: 0 }, // Use provided location or default
+            vehicleType: updatedPartner.vehicleType,
+            status: updatedPartner.status,
+            timestamp: Date.now()
+          };
+          
+          // Add to Redis geo set if location is provided
+          if (location) {
+            await redisClient.sendCommand([
+              'GEOADD',
+              'available_drivers_geo',
+              location.longitude.toString(),
+              location.latitude.toString(),
+              partnerId.toString()
+            ]);
+          }
+          
+          // Store detailed driver info in Redis hash
+          await redisClient.hSet(
+            `driver:${partnerId}`,
+            'data',
+            JSON.stringify(driverPoolData)
+          );
+          
+          // Set expiry for automatic cleanup (5 minutes = 300 seconds)
+          await redisClient.expire(`driver:${partnerId}`, 300);
+          
+          console.log(`Partner ${partnerId} added to matching pool`);
+        } catch (redisError) {
+          console.error('Redis error:', redisError);
+          // Continue with the response - Redis is considered non-critical for the response
+        }
+        
+        // Emit socket event for going online (if using Socket.io)
+        try {
+          const { io } = require('../../infrastructure/websocket');
+          io.to(`admin`).emit('driver_status_changed', {
+            partnerId,
+            status: 'online',
+            timestamp: Date.now()
+          });
+        } catch (socketError) {
+          console.error('Socket error:', socketError);
+          // Continue with response - Socket is non-critical
+        }
+      } else {
+        // If partner is going offline, remove them from Redis matching pool
+        try {
+          const { redisClient } = require('../../infrastructure/database/redis');
+          
+          // Remove from Redis geo set
+          await redisClient.sendCommand(['ZREM', 'available_drivers_geo', partnerId]);
+          
+          // Delete detailed driver info
+          await redisClient.del(`driver:${partnerId}`);
+          
+          console.log(`Partner ${partnerId} removed from matching pool`);
+          
+          // Emit socket event for going offline
+          const { io } = require('../../infrastructure/websocket');
+          io.to(`admin`).emit('driver_status_changed', {
+            partnerId,
+            status: 'offline',
+            timestamp: Date.now()
+          });
+        } catch (redisError) {
+          console.error('Redis error:', redisError);
+          // Continue with the response
+        }
+      }
+
+      sendSuccessResponse(
+        res, 
+        200, 
+        { 
+          partnerId, 
+          isAvailable,
+          lastOnline: updateData.lastOnline,
+          location: location || null,
+          message: `Partner is now ${isAvailable ? 'available' : 'unavailable'} for deliveries`
+        }
+      );
+      return;
+    } catch (error) {
+      console.error('Update availability error:', error);
+      sendErrorResponse(res, 500, 'Internal server error');
+      return;
+    }
+  },
+
+  // Update driver location
+  async updateLocation(req: Request, res: Response) {
+    try {
+      const { partnerId } = req.params;
+      const { location } = req.body;
+      console.log('Location==>:', location);
+      
+
+      // Validate location data
+      if (!location || !location.latitude || !location.longitude) {
+        sendErrorResponse(res, 400, 'Valid location with latitude and longitude is required');
+        return;
+      }
+
+      // Check if partner exists
+      const partner = await partnerRepository.findById(partnerId);
+      if (!partner) {
+        sendErrorResponse(res, 404, 'Partner not found');
+        return;
+      }
+
+      // Import Redis driver pool
+      try {
+        const { driverPool } = require('../../infrastructure/database/redis');
+        
+        // Update driver location in Redis
+        await driverPool.updateDriverLocation(partnerId, location);
+        
+        // Only update the database occasionally (not on every location update)
+        // This reduces database load for high-frequency updates
+        const updateDatabase = Math.random() < 0.1; // 10% chance to update DB
+        
+        if (updateDatabase) {
+          // Update last online timestamp in database
+          await partnerRepository.findByIdAndUpdate(partnerId, {
+            lastOnline: new Date()
+          });
+        }
+        
+        // Emit WebSocket event if needed
+        try {
+          const { io } = require('../../infrastructure/websocket');
+          io.to('admin').emit('driver_location_updated', {
+            partnerId,
+            location,
+            timestamp: Date.now()
+          });
+        } catch (socketError) {
+          console.error('Socket error in location update:', socketError);
+          // Non-critical, continue with response
+        }
+      } catch (redisError) {
+        console.error('Redis error in location update:', redisError);
+        // Even if Redis fails, we can still respond success to the partner
+      }
+
+      sendSuccessResponse(
+        res, 
+        200, 
+        { 
+          partnerId, 
+          location,
+          timestamp: Date.now()
+        }
+      );
+      return;
+    } catch (error) {
+      console.error('Update location error:', error);
+      sendErrorResponse(res, 500, 'Internal server error');
+      return;
+    }
+  },
+
+   async assignDriverToOrder(req: Request, res: Response) {
+      try {
+        const assignDriverDto = req.body;
+        console.log('assignDriverDto:', assignDriverDto);
+        
+        const { orderId, pickupLocation, vehicleType = 'any', maxDistance = 10, maxWaitTime = 60 } = assignDriverDto;
+        
+        if (!orderId || !pickupLocation) {
+           res.status(400).json({
+            success: false,
+            message: 'Order ID and pickup location are required',
+          });
+          return;
+        }
+        
+        // Validate pickup location
+        if (!pickupLocation.latitude || !pickupLocation.longitude) {
+           res.status(400).json({
+            success: false,
+            message: 'Pickup location requires valid latitude and longitude',
+          });
+          return;
+        }
+        
+        // Get available drivers near the pickup location
+        const availableDrivers = await partnerService.findAvailableDriversNearLocation(
+          pickupLocation as LocationCoordinates,
+          maxDistance,
+          vehicleType
+        );
+
+        console.log('Available drivers near location:', availableDrivers);
+        
+        if (availableDrivers.length === 0) {
+           res.status(404).json({
+            success: false,
+            message: 'No available drivers found near the pickup location',
+          });
+          return;
+        }
+        
+        // Take the closest driver but keep all available drivers for possible retry
+        const closestDriver = availableDrivers[0];
+        
+        // Get order details
+        const orderDetails = await partnerService.getOrderDetails(orderId);
+        if (!orderDetails) {
+           res.status(404).json({
+            success: false,
+            message: 'Order details not found',
+          });
+          return;
+        }
+        console.log('Order details:', orderDetails);
+        
+        // Store order details in Redis for future driver assignment attempts
+        try {
+          const { redisClient } = require('../../infrastructure/database/redis');
+          
+          // Store order details with 15 minute expiry
+          await redisClient.set(`order:${orderId}:details`, JSON.stringify(orderDetails));
+          await redisClient.expire(`order:${orderId}:details`, 900); // 15 minutes
+          
+          console.log(`Stored order details for order ${orderId} in Redis`);
+        } catch (error) {
+          console.error('Error storing order details in Redis:', error);
+          // Continue even if storing order details fails
+        }
+        
+        // Send delivery request to the driver via WebSocket
+        // Note: This only sends a request - driver must accept to be assigned
+        const deliveryRequestSent = await partnerService.sendDeliveryRequest(
+          closestDriver.partnerId,
+          {
+            orderId,
+            pickupLocation: orderDetails.pickupAddress,
+            dropLocation: orderDetails.dropoffAddress,
+            customerName: orderDetails.customerName || 'Customer',
+            amount: orderDetails.totalAmount || 0,
+            estimatedTime: orderDetails.estimatedTime,
+            paymentMethod: orderDetails.paymentMethod, 
+            distance: orderDetails.distance || 0,
+            expiresIn: 30000, // 30 seconds to respond
+          }
+        );
+        
+        if (!deliveryRequestSent) {
+           res.status(500).json({
+            success: false,
+            message: 'Failed to send delivery request to driver',
+          });
+          return;
+        }
+        
+        // Store all available drivers in Redis so we can try the next one if needed
+        try {
+          const { redisClient } = require('../../infrastructure/database/redis');
+          
+          // Store all available drivers in a list for this order
+          // Only include drivers that aren't the current one we're trying
+          if (availableDrivers.length > 1) {
+            const backupDrivers = availableDrivers
+              .slice(1) // Skip the first driver who already got the request
+              .map(driver => JSON.stringify({
+                partnerId: driver.partnerId,
+                distance: driver.distance
+              }));
+              
+            if (backupDrivers.length > 0) {
+              // Store backup drivers with 15 minute expiry
+              await redisClient.lPush(`order:${orderId}:backup_drivers`, ...backupDrivers);
+              await redisClient.expire(`order:${orderId}:backup_drivers`, 900); // 15 minutes
+              
+              console.log(`Stored ${backupDrivers.length} backup drivers for order ${orderId}`);
+            }
+          }
+        } catch (error) {
+          console.error('Error storing backup drivers:', error);
+          // Continue even if storing backup drivers fails
+        }
+        
+         res.status(200).json({
+          success: true,
+          message: 'Delivery request sent to driver, waiting for driver acceptance',
+          driverId: closestDriver.partnerId,
+          driverDistance: closestDriver.distance,
+          status: 'pending_driver_acceptance',
+          availableDriversCount: availableDrivers.length
+        });
+        return;
+      } catch (error) {
+        console.error('Error finding driver for order:', error);
+         res.status(500).json({
+          success: false,
+          message: 'Failed to find driver for order',
+          error: (error as any).message,
+        });
+        return;
+      }
+    },
+
+  // Store OTP for order verification
+  async storeOrderOtp(req: Request, res: Response) {
+    try {
+      const { orderId } = req.params;
+      const { type, otp } = req.body;
+      
+      if (!orderId || !type || !otp) {
+         res.status(400).json({
+          success: false,
+          message: 'Order ID, type, and OTP are required'
+        });
+        return;
+      }
+      
+      if (type !== 'pickup' && type !== 'dropoff') {
+         res.status(400).json({
+          success: false,
+          message: 'Type must be either pickup or dropoff'
+        });
+        return
+      }
+      
+      // Import Redis client for storing OTP
+      const { redisClient } = require('../../infrastructure/database/redis');
+      
+      // Store OTP in Redis with 1-hour expiry
+      await redisClient.hSet(`order:${orderId}:otp`, type, otp);
+      await redisClient.expire(`order:${orderId}:otp`, 3600); // 1 hour in seconds
+      
+      // Emit to socket server about new OTP generation
+      try {
+        const { io } = require('../../infrastructure/websocket');
+        io.to(`partner_${req.body.partnerId}`).emit('order_otp_generated', {
+          orderId,
+          type,
+          timestamp: Date.now()
+          // Note: We don't send the actual OTP via socket for security
+        });
+      } catch (socketError) {
+        console.error('Socket error in OTP storage:', socketError);
+        // Non-critical, continue with response
+      }
+      
+       res.status(200).json({
+        success: true,
+        message: `${type.charAt(0).toUpperCase() + type.slice(1)} OTP stored successfully`
+      });
+      return;
+    } catch (error) {
+      console.error('Error storing order OTP:', error);
+       res.status(500).json({
+        success: false,
+        message: 'Internal server error'
+      });
+      return;
+    }
+  },
+  
+  // Verify OTP for order
+  async verifyOrderOtp(req: Request, res: Response) {
+    try {
+      const { orderId } = req.params;
+      const { type, otp, partnerId } = req.body;
+      
+      if (!orderId || !type || !otp || !partnerId) {
+         res.status(400).json({
+          success: false,
+          message: 'Order ID, type, OTP and partner ID are required'
+        });
+        return
+      }
+      
+      if (type !== 'pickup' && type !== 'dropoff') {
+         res.status(400).json({
+          success: false,
+          message: 'Type must be either pickup or dropoff'
+        });
+        return
+      }
+      
+      // Import Redis client for fetching stored OTP
+      const { redisClient } = require('../../infrastructure/database/redis');
+      
+      // Get the stored OTP for this order and type
+      const storedOtp = await redisClient.hGet(`order:${orderId}:otp`, type);
+      
+      if (!storedOtp) {
+         res.status(404).json({
+          success: false,
+          message: `No ${type} OTP found for this order`
+        });
+        return;
+      }
+      
+      // Compare OTPs
+      if (storedOtp !== otp) {
+         res.status(400).json({
+          success: false,
+          message: 'Invalid OTP'
+        });
+        return;
+      }
+      
+      // OTP is valid, update order status
+      const newStatus = type === 'pickup' ? 'picked_up' : 'delivered';
+      
+      // Store verification in Redis
+      await redisClient.hSet(`order:${orderId}:verified`, type, 'true');
+      
+      // Emit to socket server about verification
+      try {
+        const { io } = require('../../infrastructure/websocket');
+        
+        // Emit to order room
+        io.to(`order_${orderId}`).emit(type === 'pickup' ? 'pickup_verified' : 'delivery_completed', {
+          orderId,
+          partnerId,
+          timestamp: Date.now()
+        });
+      } catch (socketError) {
+        console.error('Socket error in OTP verification:', socketError);
+        // Non-critical, continue with response
+      }
+      
+      // For dropoff verification, we also update the partner's statistics
+      if (type === 'dropoff') {
+        try {
+          // Update partner statistics in DB
+          await partnerRepository.updateDeliveryStats(partnerId, 'completed');
+        } catch (dbError) {
+          console.error('Error updating partner stats:', dbError);
+          // Non-critical, continue with response
+        }
+      }
+      
+       res.status(200).json({
+        success: true,
+        message: `${type.charAt(0).toUpperCase() + type.slice(1)} verified successfully`,
+        status: newStatus
+      });
+      return;
+    } catch (error) {
+      console.error('Error verifying order OTP:', error);
+       res.status(500).json({
+        success: false,
+        message: 'Internal server error'
+      });
+      return
+    }
+  },
+  
+  // Update order status via socket
+  async updateOrderStatus(req: Request, res: Response) {
+    try {
+      const { orderId } = req.params;
+      const { status, partnerId } = req.body;
+      
+      if (!orderId || !status || !partnerId) {
+         res.status(400).json({
+          success: false,
+          message: 'Order ID, status and partner ID are required'
+        });
+        return;
+      }
+      
+      // Valid statuses
+      const validStatuses = ['assigned', 'heading_to_pickup', 'arrived_pickup', 'picked_up', 'delivering', 'arrived_dropoff', 'delivered', 'completed', 'cancelled'];
+      if (!validStatuses.includes(status)) {
+         res.status(400).json({
+          success: false,
+          message: 'Invalid status'
+        });
+        return;
+      }
+      
+      // Emit to socket server about status update
+      try {
+        const { io } = require('../../infrastructure/websocket');
+        
+        // Emit to order room
+        io.to(`order_${orderId}`).emit('order_status_updated', {
+          orderId,
+          partnerId,
+          status,
+          timestamp: Date.now()
+        });
+        
+        // Special handling for certain statuses
+        if (status === 'arrived_pickup') {
+          io.to(`order_${orderId}`).emit('driver_arrived_pickup', {
+            orderId,
+            partnerId,
+            timestamp: Date.now()
+          });
+        } else if (status === 'arrived_dropoff') {
+          io.to(`order_${orderId}`).emit('driver_arrived_dropoff', {
+            orderId,
+            partnerId,
+            timestamp: Date.now()
+          });
+        }
+        
+        // Update in database or other services as needed
+        // ...
+        
+      } catch (socketError) {
+        console.error('Socket error in status update:', socketError);
+         res.status(500).json({
+          success: false,
+          message: 'Failed to send status update'
+        });
+        return;
+      }
+      
+       res.status(200).json({
+        success: true,
+        message: 'Order status updated successfully'
+      });
+      return;
+    } catch (error) {
+      console.error('Error updating order status:', error);
+       res.status(500).json({
+        success: false,
+        message: 'Internal server error'
+      });
+      return;
     }
   }
 };

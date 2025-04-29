@@ -8,4 +8,5 @@ export interface PartnerRepository {
   findByIdAndUpdate(id: string, updateData: Partial<Partner>): Promise<Partner | null>;
   updateStatus(id: string, status: boolean): Promise<Partner | null>;
   delete(id: string): Promise<boolean>;
+  updateDeliveryStats(partnerId: string, status: 'completed' | 'cancelled'): Promise<boolean>;
 }

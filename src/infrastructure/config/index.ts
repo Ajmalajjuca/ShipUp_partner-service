@@ -15,6 +15,13 @@ export const config = {
     auth: process.env.AUTH_SERVICE_URL || 'http://localhost:3001',
     user: process.env.USER_SERVICE_URL || 'http://localhost:3002',
   },
+  redis: {
+    url: process.env.REDIS_URL || 'redis://localhost:6379',
+    password: process.env.REDIS_PASSWORD || undefined,
+  },
+  cors: {
+    origins: process.env.CORS_ORIGINS || '*',
+  },
   aws: {
     accessKeyId: process.env.AWS_ACCESS_KEY_ID,
     secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,

@@ -35,6 +35,8 @@ export interface Partner {
   // Status flags
   isActive: boolean;
   isVerified: boolean;
+  isAvailable: boolean;
+  lastOnline?: Date;
   bankDetailsCompleted: boolean;
   personalDocumentsCompleted: boolean;
   vehicleDetailsCompleted: boolean;
@@ -48,6 +50,11 @@ export interface Partner {
   // Timestamps
   createdAt: Date;
   updatedAt: Date;
+
+  location?: {
+    type: string;
+    coordinates: [number, number];
+  };
 }
 
 // Factory function to create a new Partner
@@ -85,6 +92,7 @@ export const createPartner = (data: {
     ...data,
     isActive: true,
     isVerified: false,
+    isAvailable: false,
     bankDetailsCompleted: false,
     personalDocumentsCompleted: false,
     vehicleDetailsCompleted: false,

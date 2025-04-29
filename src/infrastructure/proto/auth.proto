@@ -1,0 +1,148 @@
+syntax = "proto3";
+
+package auth;
+
+service AuthService {
+  // User Authentication
+  rpc Register(RegisterRequest) returns (AuthResponse);
+  rpc Login(LoginRequest) returns (AuthResponse);
+  rpc VerifyPassword(VerifyPasswordRequest) returns (VerifyPasswordResponse);
+  rpc UpdatePassword(UpdatePasswordRequest) returns (AuthResponse);
+  rpc DeleteUser(DeleteUserRequest) returns (AuthResponse);
+
+  // Token Management
+  rpc VerifyToken(VerifyTokenRequest) returns (VerifyTokenResponse);
+  rpc RefreshToken(RefreshTokenRequest) returns (AuthResponse);
+  rpc Logout(LogoutRequest) returns (AuthResponse);
+  rpc CreateTempToken(CreateTempTokenRequest) returns (AuthResponse);
+  rpc VerifyPartnerToken(VerifyTokenRequest) returns (VerifyTokenResponse);
+
+  // OTP Operations
+  rpc SendOtp(SendOtpRequest) returns (AuthResponse);
+  rpc VerifyOtp(VerifyOtpRequest) returns (AuthResponse);
+  rpc ForgotPassword(ForgotPasswordRequest) returns (AuthResponse);
+  rpc RequestLoginOtp(RequestLoginOtpRequest) returns (AuthResponse);
+  rpc VerifyLoginOtp(VerifyLoginOtpRequest) returns (AuthResponse);
+
+  // Social Authentication
+  rpc GoogleLogin(GoogleLoginRequest) returns (AuthResponse);
+
+  // Driver Authentication
+  rpc RegisterDriver(RegisterDriverRequest) returns (AuthResponse);
+  rpc UpdateDriverEmail(UpdateDriverEmailRequest) returns (AuthResponse);
+}
+
+// Authentication Requests
+message RegisterRequest {
+  string fullName = 1;
+  string email = 2;
+  string password = 3;
+  string phone = 4;
+}
+
+message LoginRequest {
+  string email = 1;
+  string password = 2;
+}
+
+message VerifyPasswordRequest {
+  string userId = 1;
+  string password = 2;
+}
+
+message UpdatePasswordRequest {
+  string userId = 1;
+  string newPassword = 2;
+}
+
+message DeleteUserRequest {
+  string userId = 1;
+}
+
+// Token Requests
+message VerifyTokenRequest {
+  string token = 1;
+}
+
+message RefreshTokenRequest {
+  string refreshToken = 1;
+}
+
+message LogoutRequest {
+  string userId = 1;
+}
+
+message CreateTempTokenRequest {
+  string userId = 1;
+  int32 expiryInMinutes = 2;
+}
+
+// OTP Requests
+message SendOtpRequest {
+  string email = 1;
+}
+
+message VerifyOtpRequest {
+  string email = 1;
+  string otp = 2;
+}
+
+message ForgotPasswordRequest {
+  string email = 1;
+}
+
+message RequestLoginOtpRequest {
+  string email = 1;
+}
+
+message VerifyLoginOtpRequest {
+  string email = 1;
+  string otp = 2;
+}
+
+// Social Authentication Requests
+message GoogleLoginRequest {
+  string token = 1;
+}
+
+// Driver Authentication Requests
+message RegisterDriverRequest {
+  string fullName = 1;
+  string email = 2;
+  string mobileNumber = 3;
+  string password = 4;
+}
+
+message UpdateDriverEmailRequest {
+  string partnerId = 1;
+  string email = 2;
+}
+
+// Responses
+message AuthResponse {
+  bool success = 1;
+  string message = 2;
+  optional UserData userData = 3;
+  optional string token = 4;
+  optional string refreshToken = 5;
+}
+
+message VerifyPasswordResponse {
+  bool isValid = 1;
+  string message = 2;
+}
+
+message VerifyTokenResponse {
+  bool isValid = 1;
+  optional string userId = 2;
+  optional string role = 3;
+  optional string message = 4;
+}
+
+// Common Data Types
+message UserData {
+  string userId = 1;
+  string email = 2;
+  string fullName = 3;
+  string role = 4;
+} 

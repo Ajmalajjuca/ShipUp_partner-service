@@ -3,6 +3,7 @@ import { partnerController } from '../controllers/driverController';
 import { authMiddleware, adminOnly } from '../middlewares/authMiddleware';
 import { upload } from '../../utils/s3Config';
 import path from 'path';
+import { sendDeliveryRequest } from '../../infrastructure/websocket';
 
 const router = express.Router();
 
@@ -57,6 +58,18 @@ router.put('/drivers/:partnerId/documents',
   partnerController.updateDocumentUrls
 );
 
+// New route for updating driver availability status
+router.put('/drivers/update-availability/:partnerId', 
+  authMiddleware,
+  partnerController.updateAvailability
+);
+
+// New route for updating driver location
+router.post('/drivers/:partnerId/location', 
+  authMiddleware,
+  partnerController.updateLocation
+);
+
 // File upload route
 router.post('/s3/upload', authMiddleware, (req: express.Request, res: express.Response): void => {
   // Use dynamic field based on request
@@ -109,5 +122,14 @@ router.post('/s3/upload', authMiddleware, (req: express.Request, res: express.Re
     }
   });
 });
+
+router.post('/drivers/assign-driver', partnerController.assignDriverToOrder);
+
+// Add new routes for OTP handling
+router.post('/orders/:orderId/otp', authMiddleware, partnerController.storeOrderOtp);
+router.post('/orders/:orderId/verify-otp', authMiddleware, partnerController.verifyOrderOtp);
+
+// This is for order status updates sent via socket
+router.post('/orders/:orderId/status', authMiddleware, partnerController.updateOrderStatus);
 
 export default router;
