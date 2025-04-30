@@ -1068,6 +1068,46 @@ export const partnerController = {
       await redisClient.hSet(`order:${orderId}:otp`, type, otp);
       await redisClient.expire(`order:${orderId}:otp`, 3600); // 1 hour in seconds
       
+      // Also update the OTP in any active_order entries that match this order ID
+      try {
+        // Get all active order keys
+        const activeOrderKeys = await redisClient.keys('active_order:*');
+        
+        for (const key of activeOrderKeys) {
+          const orderData = await redisClient.get(key);
+          
+          if (orderData) {
+            try {
+              const parsedOrder = JSON.parse(orderData);
+              
+              // Check if this active order matches our order ID
+              if (parsedOrder.orderId === orderId) {
+                console.log(`Updating OTP in active order: ${key}`);
+                
+                // Update the OTP based on the type
+                if (type === 'pickup') {
+                  parsedOrder.pickupOtp = otp;
+                } else if (type === 'dropoff') {
+                  parsedOrder.dropoffOtp = otp;
+                }
+                
+                // Save the updated order back to Redis
+                await redisClient.set(key, JSON.stringify(parsedOrder));
+                
+                // We found the order, no need to check other keys
+                break;
+              }
+            } catch (e) {
+              console.error(`Error updating OTP in active order ${key}:`, e);
+              // Continue with other keys
+            }
+          }
+        }
+      } catch (redisError) {
+        console.error('Error updating OTP in active orders:', redisError);
+        // Non-critical, continue with response
+      }
+      
       // Emit to socket server about new OTP generation
       try {
         const { io } = require('../../infrastructure/websocket');
@@ -1122,8 +1162,45 @@ export const partnerController = {
       // Import Redis client for fetching stored OTP
       const { redisClient } = require('../../infrastructure/database/redis');
       
-      // Get the stored OTP for this order and type
-      const storedOtp = await redisClient.hGet(`order:${orderId}:otp`, type);
+      // First try to get the OTP from the order-specific hash
+      let storedOtp = await redisClient.hGet(`order:${orderId}:otp`, type);
+      
+      // If not found in the order hash, try to get it from the active_order hash
+      if (!storedOtp) {
+        console.log(`OTP not found in order:${orderId}:otp, checking active orders...`);
+        
+        // Get the user ID associated with this order
+        const activeOrderKeys = await redisClient.keys('active_order:*');
+        
+        for (const key of activeOrderKeys) {
+          const orderData = await redisClient.get(key);
+          
+          if (orderData) {
+            try {
+              const parsedOrder = JSON.parse(orderData);
+              
+              // Check if this active order matches our order ID
+              if (parsedOrder.orderId === orderId) {
+                console.log(`Found matching active order in key: ${key}`);
+                
+                // Extract the OTP based on the type
+                if (type === 'pickup' && parsedOrder.pickupOtp) {
+                  storedOtp = parsedOrder.pickupOtp;
+                  console.log(`Found pickup OTP: ${storedOtp}`);
+                  break;
+                } else if (type === 'dropoff' && parsedOrder.dropoffOtp) {
+                  storedOtp = parsedOrder.dropoffOtp;
+                  console.log(`Found dropoff OTP: ${storedOtp}`);
+                  break;
+                }
+              }
+            } catch (e) {
+              console.error(`Error parsing order data from Redis key ${key}:`, e);
+              // Continue checking other keys
+            }
+          }
+        }
+      }
       
       if (!storedOtp) {
          res.status(404).json({

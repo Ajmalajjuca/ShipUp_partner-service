@@ -503,6 +503,8 @@ async function tryNextAvailableDriver(orderId: string): Promise<boolean> {
     
     // Get order details
     const orderDetails = await getOrderDetails(orderId);
+    console.log(`Order details for ${orderId}:`, orderDetails);
+    
     
     if (!orderDetails) {
       console.log(`Could not get order details for order ${orderId}`);
