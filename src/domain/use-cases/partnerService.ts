@@ -1,5 +1,5 @@
 import axios from 'axios';
-import DriverModel from '../../infrastructure/models/driverModel';
+import DriverModel from '../../infrastructure/database/models/driverModel';
 import { Order } from '../entities/order';
 import { LocationCoordinates } from '../entities/location';
 
@@ -60,7 +60,8 @@ export class PartnerService {
       const driversFound = await DriverModel.find(availableDriversQuery).exec();
 
       console.log(`Found ${driversFound.length} available drivers`);
-
+      console.log(`Found ${driversFound.length} available drivers`);
+      
       // Calculate distance for each driver and filter by maxDistance and vehicle type
       const driversWithDistance = driversFound
         .filter(driver => 

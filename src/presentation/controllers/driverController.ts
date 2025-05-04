@@ -18,6 +18,7 @@ import { PartnerUpdateFields, VerificationSection, VehicleDocuments } from '../.
 import { send } from 'process';
 import { PartnerService } from '../../domain/use-cases/partnerService';
 import { LocationCoordinates } from '../../domain/entities/location';
+import { MongoRatingRepository } from '../../infrastructure/repositories/mongoRatingRepository';
 
 // Use dependency injection for services
 const partnerRepository = new PartnerRepositoryImpl();
@@ -25,6 +26,9 @@ const createPartner = new CreatePartner(partnerRepository);
 const partnerService = new PartnerService(); // Assuming this is a function that returns the partner service instance
 // Uncomment this when all DI components are fixed
 // const partnerService = getPartnerService();
+
+// Create rating repository instance for use in the controller
+const ratingRepository = new MongoRatingRepository();
 
 export const partnerController = {
   // Create a new partner
@@ -44,7 +48,6 @@ export const partnerController = {
         upiId,
         vehicleDocuments: vehicleDocumentsStr,
       } = req.body;
-      console.log('vehicleType:', vehicleType);
       
 
       // Parse vehicleDocuments from form data

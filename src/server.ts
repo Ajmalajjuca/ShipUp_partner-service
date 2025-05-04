@@ -6,6 +6,7 @@ import morgan from 'morgan';
 import { config } from './infrastructure/config';
 import { errorHandler } from './infrastructure/middleware/errorHandler';
 import partnerRoutes from './presentation/routes/partnerRoutes';
+import ratingRoutes from './presentation/routes/ratingRoutes';
 import { connectDB } from './infrastructure/database/mongoose';
 import { initializeSocketServer } from './infrastructure/websocket';
 import { initializeInactivityChecker } from './infrastructure/cron/inactivityChecker';
@@ -24,6 +25,7 @@ connectDB();
 
 // Routes
 app.use('/api', partnerRoutes);
+app.use('/api', ratingRoutes);
 
 // Health check endpoint
 app.get('/health', (req, res) => {

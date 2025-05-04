@@ -46,6 +46,10 @@ export interface Partner {
   ongoingOrders: number;
   completedOrders: number;
   canceledOrders: number;
+  
+  // Rating information
+  averageRating?: number;
+  totalRatings?: number;
 
   // Timestamps
   createdAt: Date;

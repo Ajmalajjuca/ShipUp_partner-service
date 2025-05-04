@@ -1,6 +1,6 @@
 import { PartnerRepository } from '../../domain/repositories/partnerRepository';
 import { Partner } from '../../domain/entities/partner';
-import DriverModel, { IDriverPartner } from '../models/driverModel';
+import DriverModel, { IDriverPartner } from '../database/models/driverModel';
 
 // Define PartnerDocument interface
 interface PartnerDocument {
